@@ -7,21 +7,153 @@ public class Win32 {
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
 
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
-
     [DllImport("winmm.dll")]
     public static extern uint timeBeginPeriod(uint uMilliseconds);
 
-    public const int LEFTDOWN  = 0x02;
-    public const int LEFTUP    = 0x04;
-    public const int RIGHTDOWN = 0x08;
-    public const int RIGHTUP   = 0x10;
+    public static bool PhysicalLeftDown = false;
+
+    private const int WH_MOUSE_LL = 14;
+    private const int WM_LBUTTONDOWN = 0x0201;
+    private const int WM_LBUTTONUP = 0x0202;
+    private const int LLMHF_INJECTED = 0x01;
+    private const int LLMHF_LOWER_IL_INJECTED = 0x02;
+
+    private static IntPtr _hookId = IntPtr.Zero;
+    private static HookProc _hookProc = HookCallback;
+
+    private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSLLHOOKSTRUCT {
+        public POINT pt;
+        public int mouseData;
+        public int flags;
+        public int time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT {
+        public int x;
+        public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    private const uint PM_REMOVE = 0x0001;
+
+    [DllImport("user32.dll")]
+    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    public static void PumpMessages() {
+        MSG msg;
+        while (PeekMessage(out msg, IntPtr.Zero, 0, 0, PM_REMOVE)) {
+            TranslateMessage(ref msg);
+            DispatchMessage(ref msg);
+        }
+    }
+
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+        if (nCode >= 0) {
+            MSLLHOOKSTRUCT st = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
+            int f = st.flags;
+            if ((f & LLMHF_INJECTED) == 0 && (f & LLMHF_LOWER_IL_INJECTED) == 0) {
+                int wp = (int)wParam.ToInt64();
+                if (wp == WM_LBUTTONDOWN) PhysicalLeftDown = true;
+                else if (wp == WM_LBUTTONUP) PhysicalLeftDown = false;
+            }
+        }
+        return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    public static bool InstallMouseHook() {
+        PhysicalLeftDown = false;
+        _hookId = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, IntPtr.Zero, 0);
+        return _hookId != IntPtr.Zero;
+    }
+
+    public static void UninstallMouseHook() {
+        if (_hookId != IntPtr.Zero) {
+            UnhookWindowsHookEx(_hookId);
+            _hookId = IntPtr.Zero;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT {
+        public uint type;
+        public MOUSEINPUT mi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    private const uint INPUT_MOUSE = 0;
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    public static void SendLeftDown() {
+        INPUT[] inputs = new INPUT[1];
+        inputs[0].type = INPUT_MOUSE;
+        inputs[0].mi.dx = 0;
+        inputs[0].mi.dy = 0;
+        inputs[0].mi.mouseData = 0;
+        inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        inputs[0].mi.time = 0;
+        inputs[0].mi.dwExtraInfo = IntPtr.Zero;
+        SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    public static void SendLeftUp() {
+        INPUT[] inputs = new INPUT[1];
+        inputs[0].type = INPUT_MOUSE;
+        inputs[0].mi.dx = 0;
+        inputs[0].mi.dy = 0;
+        inputs[0].mi.mouseData = 0;
+        inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        inputs[0].mi.time = 0;
+        inputs[0].mi.dwExtraInfo = IntPtr.Zero;
+        SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
 }
 "@
 }
 
 [Win32]::timeBeginPeriod(1)
+$hookOk = [Win32]::InstallMouseHook()
 
 $config = @(
     @(15,56), @(16,15), @(24,78), @(14,15), @(21,49), @(16,12),
@@ -69,28 +201,38 @@ function SpinWaitMs($ms) {
 Write-Host "Facut de Gioconda si n am chef sa ma joc legit" -ForegroundColor green
 Write-Host "Tine click stanga = autoclick | F11 = iesi" -foregroundColor green
 
-while ($true) {
+try {
 
-    if ([Win32]::GetAsyncKeyState(0x7A) -lt 0) { break }
+    while ($true) {
 
-    $leftHeld = ([Win32]::GetAsyncKeyState(0x01) -lt 0)
+        [Win32]::PumpMessages()
 
-    if ($leftHeld) {
+        if ([Win32]::GetAsyncKeyState(0x7A) -lt 0) { break }
 
-        $pair = $config[$idx % $config.Count]
-        $idx++
+        if ($hookOk) { $leftHeld = [Win32]::PhysicalLeftDown } else { $leftHeld = ([Win32]::GetAsyncKeyState(0x01) -lt 0) }
 
-        $downDelay = [Math]::Max(1, $pair[0] - 2 + $rand.Next(-2,3))
-        $upDelay   = [Math]::Max(1, $pair[1] - 3 + $rand.Next(-2,3))
+        if ($leftHeld) {
 
-        for ($finger=0; $finger -lt 2; $finger++) {
-            [Win32]::mouse_event([Win32]::LEFTDOWN,  0,0,0,0)
+            $pair = $config[$idx % $config.Count]
+            $idx++
 
-            SpinWaitMs($downDelay + $rand.Next(-1,2))
+            $downDelay = [Math]::Max(1, $pair[0] - 2 + $rand.Next(-2,3))
+            $upDelay   = [Math]::Max(1, $pair[1] - 3 + $rand.Next(-2,3))
 
-            [Win32]::mouse_event([Win32]::LEFTUP, 0,0,0,0)
+            for ($finger=0; $finger -lt 2; $finger++) {
+                [Win32]::SendLeftDown()
 
-            SpinWaitMs($upDelay + $rand.Next(-1,2))
+                SpinWaitMs($downDelay + $rand.Next(-1,2))
+                [Win32]::PumpMessages()
+
+                [Win32]::SendLeftUp()
+
+                SpinWaitMs($upDelay + $rand.Next(-1,2))
+                [Win32]::PumpMessages()
+            }
         }
     }
+
+} finally {
+    [Win32]::UninstallMouseHook()
 }
