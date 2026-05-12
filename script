@@ -10,6 +10,9 @@ public class Win32 {
     [DllImport("winmm.dll")]
     public static extern uint timeBeginPeriod(uint uMilliseconds);
 
+    [DllImport("winmm.dll")]
+    public static extern uint timeEndPeriod(uint uMilliseconds);
+
     public static bool PhysicalLeftDown = false;
 
     private const int WH_MOUSE_LL = 14;
@@ -152,7 +155,7 @@ public class Win32 {
 "@
 }
 
-[Win32]::timeBeginPeriod(1)
+[Win32]::timeBeginPeriod(4)
 $hookOk = [Win32]::InstallMouseHook()
 
 $config = @(
@@ -193,9 +196,13 @@ $config = @(
 $rand = [Random]::new()
 $idx  = 0
 
-function SpinWaitMs($ms) {
+function WaitMs($totalMs) {
+    if ($totalMs -le 0) { return }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) { }
+    $spinReserve = [Math]::Min(2, $totalMs)
+    $sleepPart = $totalMs - $spinReserve
+    if ($sleepPart -gt 0) { [System.Threading.Thread]::Sleep($sleepPart) }
+    while ($sw.ElapsedMilliseconds -lt $totalMs) { }
 }
 
 Write-Host "Facut de Gioconda si n am chef sa ma joc legit" -ForegroundColor green
@@ -222,17 +229,20 @@ try {
             for ($finger=0; $finger -lt 2; $finger++) {
                 [Win32]::SendLeftDown()
 
-                SpinWaitMs($downDelay + $rand.Next(-1,2))
+                WaitMs($downDelay + $rand.Next(-1,2))
                 [Win32]::PumpMessages()
 
                 [Win32]::SendLeftUp()
 
-                SpinWaitMs($upDelay + $rand.Next(-1,2))
+                WaitMs($upDelay + $rand.Next(-1,2))
                 [Win32]::PumpMessages()
             }
+        } else {
+            [System.Threading.Thread]::Sleep(3)
         }
     }
 
 } finally {
     [Win32]::UninstallMouseHook()
+    [Win32]::timeEndPeriod(4)
 }
