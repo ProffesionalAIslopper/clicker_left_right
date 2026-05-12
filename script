@@ -67,15 +67,15 @@ function SpinWaitMs($ms) {
 }
 
 Write-Host "Facut de Gioconda si n am chef sa ma joc legit" -ForegroundColor green
-Write-Host "Tine F12 = autoclick stanga | F11 = iesi" -foregroundColor green
+Write-Host "Tine click stanga = autoclick | F11 = iesi" -foregroundColor green
 
 while ($true) {
 
     if ([Win32]::GetAsyncKeyState(0x7A) -lt 0) { break }
 
-    $f12Held = ([Win32]::GetAsyncKeyState(0x7B) -lt 0)
+    $leftHeld = ([Win32]::GetAsyncKeyState(0x01) -lt 0)
 
-    if ($f12Held) {
+    if ($leftHeld) {
 
         $pair = $config[$idx % $config.Count]
         $idx++
